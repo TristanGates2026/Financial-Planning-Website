@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Compound Growth Calculator</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+      background: #ffffff;
+      color: #1a1a1a;
+      padding: 24px 20px 28px;
+      max-width: 700px;
+      margin: 0 auto;
+    }
+
+    .controls {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 16px;
+      margin-bottom: 20px;
+    }
+
+    .ctrl { display: flex; flex-direction: column; gap: 5px; }
+
+    .ctrl-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+    }
+
+    .ctrl-label {
+      font-size: 11px;
+      color: #888;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .ctrl-val {
+      font-size: 15px;
+      font-weight: 500;
+      color: #1a1a1a;
+    }
+
+    input[type="range"] {
+      width: 100%;
+      accent-color: #1D9E75;
+      height: 4px;
+      cursor: pointer;
+    }
+
+    .result-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 10px;
+      margin-bottom: 20px;
+    }
+
+    .res-card {
+      background: #f5f5f3;
+      border-radius: 8px;
+      padding: 12px 14px;
+    }
+
+    .res-year {
+      font-size: 11px;
+      color: #888;
+      margin-bottom: 4px;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+
+    .res-opt {
+      font-size: 20px;
+      font-weight: 500;
+      color: #1D9E75;
+      line-height: 1.2;
+    }
+
+    .res-base {
+      font-size: 12px;
+      color: #888;
+      margin-top: 3px;
+    }
+
+    .res-diff {
+      font-size: 11px;
+      color: #aaa;
+      margin-top: 2px;
+    }
+
+    .legend {
+      display: flex;
+      gap: 20px;
+      margin-bottom: 8px;
+    }
+
+    .leg-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+      color: #888;
+    }
+
+    .leg-swatch-dashed {
+      width: 20px;
+      height: 0;
+      border-top: 2px dashed #888780;
+    }
+
+    .leg-swatch-solid {
+      width: 20px;
+      height: 3px;
+      background: #1D9E75;
+      border-radius: 2px;
+    }
+
+    .chart-wrap {
+      position: relative;
+      width: 100%;
+      height: 280px;
+    }
+
+    @media (max-width: 480px) {
+      .controls { grid-template-columns: 1fr; gap: 12px; }
+      .result-grid { grid-template-columns: 1fr; }
+      .chart-wrap { height: 240px; }
+    }
+  </style>
+</head>
+<body>
+
+  <div class="controls">
+    <div class="ctrl">
+      <div class="ctrl-top">
+        <span class="ctrl-label">Monthly savings</span>
+        <span class="ctrl-val" id="savings-out">$875</span>
+      </div>
+      <input type="range" id="savings" min="100" max="2000" value="875" step="25">
+    </div>
+    <div class="ctrl">
+      <div class="ctrl-top">
+        <span class="ctrl-label">Annual return</span>
+        <span class="ctrl-val" id="rate-out">8%</span>
+      </div>
+      <input type="range" id="rate" min="5" max="12" value="8" step="1">
+    </div>
+    <div class="ctrl">
+      <div class="ctrl-top">
+        <span class="ctrl-label">Time horizon</span>
+        <span class="ctrl-val" id="years-out">30 yrs</span>
+      </div>
+      <input type="range" id="years-slider" min="10" max="40" value="30" step="5">
+    </div>
+  </div>
+
+  <div class="result-grid" id="result-cards"></div>
+
+  <div class="legend">
+    <div class="leg-item"><div class="leg-swatch-dashed"></div>Baseline ($300/mo)</div>
+    <div class="leg-item"><div class="leg-swatch-solid"></div>Your savings</div>
+  </div>
+
+  <div class="chart-wrap">
+    <canvas id="cgChart" role="img" aria-label="Line chart comparing compound growth of $300/month baseline vs your selected monthly savings over time">Adjust the sliders to see how your monthly savings grow over time compared to the average American baseline of $300/month.</canvas>
+  </div>
+
+  <script>
+    const BASE = 300;
+    let chartInstance = null;
+
+    function fv(pmt, r, n) {
+      const rm = r / 12 / 100;
+      return pmt * ((Math.pow(1 + rm, n) - 1) / rm);
+    }
+
+    function fmt(v) {
+      return '$' + Math.round(v).toLocaleString();
+    }
+
+    function render() {
+      const savings = parseInt(document.getElementById('savings').value);
+      const rate = parseInt(document.getElementById('rate').value);
+      const maxYrs = parseInt(document.getElementById('years-slider').value);
+
+      document.getElementById('savings-out').textContent = '$' + savings.toLocaleString();
+      document.getElementById('rate-out').textContent = rate + '%';
+      document.getElementById('years-out').textContent = maxYrs + ' yrs';
+
+      const milestones = [...new Set([10, 20, maxYrs].filter(v => v <= maxYrs))].sort((a, b) => a - b).slice(0, 3);
+
+      const cards = document.getElementById('result-cards');
+      cards.innerHTML = '';
+      milestones.forEach(yr => {
+        const b = fv(BASE, rate, yr * 12);
+        const o = fv(savings, rate, yr * 12);
+        const diff = o - b;
+        const card = document.createElement('div');
+        card.className = 'res-card';
+        card.innerHTML = `
+          <div class="res-year">${yr}-year balance</div>
+          <div class="res-opt">${fmt(o)}</div>
+          <div class="res-base">Baseline: ${fmt(b)}</div>
+          <div class="res-diff">${diff >= 0 ? '+' : ''}${fmt(diff)} vs baseline</div>
+        `;
+        cards.appendChild(card);
+      });
+
+      const labels = [], baseData = [], optData = [];
+      for (let yr = 1; yr <= maxYrs; yr++) {
+        labels.push(yr);
+        baseData.push(Math.round(fv(BASE, rate, yr * 12)));
+        optData.push(Math.round(fv(savings, rate, yr * 12)));
+      }
+
+      if (chartInstance) chartInstance.destroy();
+      chartInstance = new Chart(document.getElementById('cgChart'), {
+        type: 'line',
+        data: {
+          labels,
+          datasets: [
+            {
+              label: 'Baseline $300/mo',
+              data: baseData,
+              borderColor: '#888780',
+              backgroundColor: 'rgba(136,135,128,0.06)',
+              fill: true, tension: 0.3, pointRadius: 0, borderWidth: 2,
+              borderDash: [5, 3]
+            },
+            {
+              label: 'Your savings',
+              data: optData,
+              borderColor: '#1D9E75',
+              backgroundColor: 'rgba(29,158,117,0.08)',
+              fill: true, tension: 0.3, pointRadius: 0, borderWidth: 2
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { display: false },
+            tooltip: {
+              callbacks: {
+                label: ctx => ctx.dataset.label + ': $' + ctx.parsed.y.toLocaleString()
+              }
+            }
+          },
+          scales: {
+            x: {
+              title: { display: true, text: 'Years', font: { size: 12 } },
+              grid: { color: 'rgba(136,135,128,0.15)' },
+              ticks: { autoSkip: true, maxTicksLimit: 10, color: '#888' }
+            },
+            y: {
+              ticks: {
+                color: '#888',
+                callback: v => v >= 1000000
+                  ? '$' + (v / 1000000).toFixed(1) + 'M'
+                  : '$' + (v / 1000).toFixed(0) + 'k'
+              },
+              grid: { color: 'rgba(136,135,128,0.15)' }
+            }
+          }
+        }
+      });
+    }
+
+    document.getElementById('savings').addEventListener('input', render);
+    document.getElementById('rate').addEventListener('input', render);
+    document.getElementById('years-slider').addEventListener('input', render);
+    render();
+  </script>
+
+</body>
+</html>
